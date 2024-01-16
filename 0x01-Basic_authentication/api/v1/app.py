@@ -13,26 +13,27 @@ app = Flask(__name__)
 app.register_blueprint(app_views)
 CORS(app, resources={r"/api/v1/*": {"origins": "*"}})
 auth = None
-AUTH_TYPE = getenv("AUTH_TYPE")
-
-if AUTH_TYPE == "auth":
-    from api.v1.auth.auth import Auth
-    auth = Auth()
-elif AUTH_TYPE == "basic_auth":
-    from api.v1.auth.basic_auth import BasicAuth
-    auth = BasicAuth()
-
-
-@app.errorhandler(401)
-def unauthorized(error) -> str:
-    """Not authorized handler"""
-    return jsonify({"error": "Unauthorized"}), 401
+auth_type = getenv('AUTH_TYPE')
+if auth_type:
+    if auth_type == 'auth':
+        from api.v1.auth.auth import Auth
+        auth = Auth()
+    elif auth_type == 'basic_auth':
+        from api.v1.auth.basic_auth import BasicAuth
+        auth = BasicAuth()
 
 
-@app.errorhandler(403)
-def forbidden(error) -> str:
-    """Forbidden handler"""
-    return jsonify({"error": "Forbidden"}), 403
+@app.before_request
+def before_req():
+    '''check authoriaztion'''
+    if auth:
+        paths_list = ['/api/v1/status/', '/api/v1/unauthorized/',
+                      '/api/v1/forbidden/']
+        if auth.require_auth(request.path, paths_list):
+            if not auth.authorization_header(request):
+                return abort(401)
+            if not auth.current_user(request):
+                return abort(403)
 
 
 @app.errorhandler(404)
@@ -42,24 +43,18 @@ def not_found(error) -> str:
     return jsonify({"error": "Not found"}), 404
 
 
-@app.before_request
-def bf_request() -> str:
+@app.errorhandler(401)
+def not_auth(error) -> str:
+    """ Not authorized handler
     """
-    Before Request Handler
+    return jsonify({"error": "Unauthorized"}), 401
+
+
+@app.errorhandler(403)
+def forbid(error) -> str:
+    """ forbidden handler
     """
-    if auth is None:
-        pass
-
-    excluded_paths = ['/api/v1/status/',
-                      '/api/v1/unauthorized/',
-                      '/api/v1/forbidden/']
-
-    if auth.require_auth(request.path, excluded_paths):
-        if auth.authorization_header(request) is None:
-            abort(401)
-
-        if auth.current_user(request) is None:
-            abort(403)
+    return jsonify({"error": "Forbidden"}), 403
 
 
 if __name__ == "__main__":
